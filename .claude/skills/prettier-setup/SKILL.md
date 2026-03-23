@@ -19,9 +19,9 @@ npm install --save-dev prettier@3.7.4 pretty-quick@4.2.2
 
 Add the following entries to the `"scripts"` section:
 
-```json
+```
 "prettier:fix-all": "prettier --write . --ignore-path .prettierignore",
-"prettier:fix-changes": "pretty-quick --ignore-path .prettierignore"
+"prettier:fix-changes": "pretty-quick --ignore-path .prettierignore",
 ```
 
 Use a JSON merge — do NOT overwrite existing scripts.
