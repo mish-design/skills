@@ -21,11 +21,11 @@ Design principles:
 
 ## Step 1 — Check for linters first
 
-Before AI review:
+Before AI review, check `package.json`:
 
-1. Check `package.json` for lint scripts: `lint`, `lint:fix`, `eslint`, `prettier`
-2. If linters exist — run them on changed files (reduces noise in AI review)
-3. If no linters — suggest running the **pre-commit** skill first
+1. Look for ESLint/Prettier in `devDependencies` or `dependencies`
+2. If linters found — run them on changed files (improves AI review quality)
+3. If no linters — tell the user to run the **pre-commit** skill first to install them
 
 ## Step 2 — Create the AI review script
 
