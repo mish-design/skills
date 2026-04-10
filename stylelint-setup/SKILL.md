@@ -43,6 +43,9 @@ Wait for the user's decision before proceeding.
 
 ## Step 2 — Install dependencies
 
+Use a package manager to install dependencies from package.json
+If no package manager is specified, use npm
+
 ```bash
 npm i -D stylelint stylelint-config-standard stylelint-config-standard-scss stylelint-config-recess-order
 ```

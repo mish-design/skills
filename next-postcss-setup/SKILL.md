@@ -41,12 +41,12 @@ If `postcss.config.js` already exists — ask whether to overwrite it.
 
 ## Step 2 — Install dependencies
 
+Use a package manager to install dependencies from package.json
+If no package manager is specified, use npm
+
 ```bash
 npm i postcss-flexbugs-fixes postcss-preset-env postcss-hover-media-feature
 ```
-
-Run all three in one command. Don't split into separate installs — it's slower and pointless.
-
 ---
 
 ## Step 3 — Create `postcss.config.js`
