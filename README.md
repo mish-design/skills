@@ -16,6 +16,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill testing-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill axios-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
