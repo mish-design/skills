@@ -14,6 +14,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill git-hooks-prepush-ai-review`
 
+`npx skills add https://github.com/mish-design/skills --skill testing-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
