@@ -44,11 +44,14 @@ Ask these questions before generating:
   (e.g., http://localhost:1337 or https://api.example.com)
 ```
 
-### 5. Content Types
+### 5. Generate TypeScript Types
 
 ```
-? Content types to generate helpers for:
-  (e.g., articles, categories, pages, authors)
+? Generate TypeScript types for content models?
+  1) No, only generic types (StrapiResponse<T>, StrapiMedia)
+  2) Yes, fetch schema from Strapi API automatically
+  3) Yes, but I'll specify manually:
+     (e.g., articles, categories, pages, authors)
 ```
 
 ## Version Differences
@@ -347,10 +350,94 @@ function getBestImage(
 }
 ```
 
-### 4. `lib/strapi/fetch.ts` (if not using axios)
+### 3. `lib/strapi/generate-types.ts` (optional, if requested)
 
 ```typescript
-// Simple fetch wrapper with error handling
+#!/usr/bin/env tsx
+
+import fs from 'fs';
+import path from 'path';
+
+const STRAPI_URL = process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
+
+async function fetchContentTypes() {
+  try {
+    const response = await fetch(`${STRAPI_URL}/api/content-types?populate=*`);
+    
+    if (!response.ok) {
+      console.error(`Failed to fetch content types: ${response.status}`);
+      return null;
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching Strapi content types:', error);
+    return null;
+  }
+}
+
+function generateTypeFromSchema(schema: any): string {
+  // Generate TypeScript interface from Strapi schema
+  // This is simplified - expand based on actual Strapi response
+  const lines = [`export interface ${schema.uid} {`];
+  
+  for (const [fieldName, fieldConfig] of Object.entries(schema.attributes)) {
+    const field = fieldConfig as any;
+    let type = 'unknown';
+    
+    if (field.type === 'string') type = 'string';
+    else if (field.type === 'integer' || field.type === 'biginteger' || field.type === 'decimal') type = 'number';
+    else if (field.type === 'boolean') type = 'boolean';
+    else if (field.type === 'date' || field.type === 'datetime' || field.type === 'time') type = 'string';
+    else if (field.type === 'media') type = 'StrapiMedia | null';
+    else if (field.type === 'relation') {
+      const related = field.relation?.split('.')?.[1] || 'unknown';
+      type = `StrapiResponse<${related}> | null`;
+    }
+    else if (field.type === 'component') type = 'any';
+    else if (field.type === 'dynamiczone') type = 'any[]';
+    else if (field.type === 'json') type = 'Record<string, unknown>';
+    
+    const optional = field.required === false ? '?' : '';
+    lines.push(`  ${fieldName}${optional}: ${type};`);
+  }
+  
+  lines.push(`}`);
+  return lines.join('\n');
+}
+
+async function main() {
+  console.log('📡 Fetching Strapi content types...');
+  const data = await fetchContentTypes();
+  
+  if (!data) {
+    console.log('❌ Could not fetch content types. Using generic types only.');
+    return;
+  }
+  
+  const types: string[] = [];
+  types.push('// Auto-generated from Strapi API');
+  types.push('// Run with: npm run strapi:types');
+  types.push('');
+  
+  // Generate types for each content type
+  for (const contentType of data.data) {
+    const interfaceCode = generateTypeFromSchema(contentType);
+    types.push(interfaceCode);
+    types.push('');
+  }
+  
+  const outputPath = path.join(process.cwd(), 'lib', 'strapi', 'generated-types.ts');
+  fs.writeFileSync(outputPath, types.join('\n'), 'utf8');
+  
+  console.log(`✅ Generated types in ${outputPath}`);
+  console.log('💡 Add to package.json: "strapi:types": "tsx lib/strapi/generate-types.ts"');
+}
+
+main().catch(console.error);
+```
+
+### 4. `lib/strapi/fetch.ts` (if not using axios)
 async function strapiFetch<T>(
   endpoint: string,
   options?: RequestInit & {
@@ -432,4 +519,4 @@ const thumbnailUrl = getImageUrl(article.cover?.formats?.thumbnail);
 - `lib/strapi/api.ts` — typed API client (axios or fetch)
 - `lib/strapi/helpers.ts` — populate, pagination, filters, getImageUrl
 - `.env.local` has `NEXT_PUBLIC_STRAPI_URL` (for Next.js)
-- Content type helpers generated for requested types
+- Optional: `lib/strapi/generate-types.ts` — script for auto-generating types
