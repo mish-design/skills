@@ -18,6 +18,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill axios-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill strapi-client-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -31,6 +33,16 @@
 2. opencode https://opencode.ai/docs/ru/skills
 3. cursor https://cursor.com/docs/skills
 
+## Доступные скиллы
+
+| Скилл | Описание |
+|-------|----------|
+| **prettier-setup** | Настройка Prettier для автоматического форматирования кода |
+| **git-hooks-precommit** | Pre-commit хуки через Husky + lint-staged для проверки кода перед коммитом |
+| **git-hooks-prepush-ai-review** | Pre-push AI-ревью через LLM (OpenAI-совместимый API) перед отправкой кода |
+| **testing-setup** | Универсальный фреймворк для написания unit и интеграционных тестов |
+| **axios-setup** | Типизированный API-клиент с interceptors, retry и централизованной обработкой ошибок |
+| **strapi-client-setup** | Типизированный клиент для Strapi с поддержкой v3/v4/v5, populate и медиафайлами |
 
 ## Примеры доступных путей
 
@@ -49,7 +61,6 @@
 | | Проект* | `.claude/skills/<name>/SKILL.md` |
 | | Глобально* | `~/.claude/skills/<name>/SKILL.md` |
 
-
 ## При добавлении скиллов
 
 1. Новые скиллы добавляются через `pull-request` и требуют ревью.
@@ -58,7 +69,6 @@
 
 Объем файла SKILL.md не должен превышать 500 строк. Подробные справочные материалы следует перенести в отдельные файлы.
 [Источник](https://code.claude.com/docs/en/skills#add-supporting-files)
-
 
 ## Важно
 
