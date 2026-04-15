@@ -158,7 +158,6 @@ export const useAppStore = create<AppState>()(
 **Dependencies:**
 ```bash
 <pkg-manager> add zustand
-<pkg-manager> add zustand/middleware # For persist/devtools
 <pkg-manager> add immer # If using immer
 ```
 
@@ -170,27 +169,47 @@ The store is defined as in Level 2. The magic happens in the component that uses
 
 **2. `hooks/use-hydrated-store.ts`:**
 
-This simple but powerful hook solves SSR hydration issues. It ensures that the client-side state (e.g., from `localStorage`) is only used *after* the initial server render is complete.
+Uses `useSyncExternalStore` to properly handle SSR hydration. Returns server snapshot on SSR, then subscribes to store changes on client.
 
 ```typescript
-import { useState, useEffect } from 'react'
+import { useSyncExternalStore } from 'react';
+
+type StoreApi<T> = {
+  getState: () => T;
+  subscribe: (onStoreChange: () => void) => () => void;
+};
 
 const useHydratedStore = <T, F>(
-  store: (callback: (state: T) => unknown) => unknown,
+  store: StoreApi<T>,
   callback: (state: T) => F
-) => {
-  const result = store(callback) as F;
-  const [hydratedResult, setHydratedResult] = useState<F>();
-
-  useEffect(() => {
-    setHydratedResult(result);
-  }, [result]);
-
-  return hydratedResult;
+): F => {
+  return useSyncExternalStore(
+    (onStoreChange) => store.subscribe(onStoreChange),
+    () => callback(store.getState()),
+    () => callback(store.getState()) // server snapshot = same as initial
+  );
 };
 
 export default useHydratedStore;
 ```
+
+**Usage in component (Next.js App Router):**
+
+```typescript
+'use client';
+
+import { useAppStore } from '@/lib/store/store';
+import useHydratedStore from '@/hooks/use-hydrated-store';
+
+function ThemeToggle() {
+  const theme = useHydratedStore(useAppStore, (state) => state.theme);
+  const toggleTheme = useAppStore((state) => state.toggleTheme);
+
+  return <button onClick={toggleTheme}>Theme: {theme}</button>;
+}
+```
+
+Note: For App Router, mark the component `'use client'` and use `useHydratedStore` only for persisted state that differs between server and client. For simpler cases, just use the store directly.
 
 **3. `lib/store/slices/`** (if multiple slices selected):
 ```
@@ -219,26 +238,21 @@ function Counter() {
 const { theme, toggleTheme } = useAppStore()
 ```
 
-### SSR Usage (Next.js)
+### SSR Usage (Next.js App Router)
 
-To use a persisted store in a Next.js component, use the `useHydratedStore` hook to prevent hydration mismatches. It will return `undefined` on the server and the actual state on the client after hydration.
+To use a persisted store in a Next.js App Router component, mark it `'use client'` and use `useHydratedStore` to prevent hydration mismatches. The hook returns the server snapshot initially, then subscribes to the client store.
 
 ```typescript
-'use client'
+'use client';
 
-import { useAppStore } from '@/lib/store/store'
-import useHydratedStore from '@/hooks/use-hydrated-store'
+import { useAppStore } from '@/lib/store/store';
+import useHydratedStore from '@/hooks/use-hydrated-store';
 
 function ThemeToggle() {
-  const theme = useHydratedStore(useAppStore, (state) => state.theme)
-  const { toggleTheme } = useAppStore()
-  
-  // Render a placeholder or null on the server and during hydration
-  if (!theme) {
-    return <div style={{width: 80, height: 24}} /> // Or some loading skeleton
-  }
-  
-  return <button onClick={toggleTheme}>Theme: {theme}</button>
+  const theme = useHydratedStore(useAppStore, (state) => state.theme);
+  const toggleTheme = useAppStore((state) => state.toggleTheme);
+
+  return <button onClick={toggleTheme}>Theme: {theme}</button>;
 }
 ```
 
