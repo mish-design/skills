@@ -14,7 +14,6 @@ First, check the project:
 - Look for `package.json` dependencies to determine framework:
   - `react`, `next` → **React** 
   - `vue`, `@vue/*` → **Vue**
-  - `svelte`, `@sveltejs/*` → **Svelte** (optional support)
 - Check for existing `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml` to determine package manager
 
 If unclear, ask:
@@ -23,7 +22,6 @@ If unclear, ask:
 ? Framework:
   1) React/Next.js
   2) Vue/Nuxt
-  3) Svelte/SvelteKit
 
 ? Package manager:
   1) npm
@@ -43,16 +41,14 @@ Below examples use `{PM}` as placeholder — replace with your package manager.
 ### React/Next.js
 
 ```bash
-{PM} i i18next react-i18next i18next-browser-languagedetector
+# Core i18next libraries
+{PM} i i18next react-i18next i18next-browser-languagedetector i18next-http-backend
 
-# optional: backend for loading translations
-{PM} i i18next-http-backend
-
-# optional: SSR support (Next.js)
+# Optional: SSR support for Next.js
 {PM} i next-i18next
 
-# types
-{PM} i -D @types/i18next
+# Dev dependencies for type generation and key extraction
+{PM} i -D @types/i18next i18next-parser i18next-resources-to-ts
 ```
 
 ### Vue 2/3
@@ -71,30 +67,23 @@ Below examples use `{PM}` as placeholder — replace with your package manager.
 ## Step 3 — Create Translation Structure
 
 ```
-locales/
+public/locales/
 ├── en/
 │   ├── common.json
-│   ├── auth.json
-│   ├── dashboard.json
-│   └── errors.json
+│   └── auth.json
 ├── ru/
 │   ├── common.json
-│   └── ...
-├── es/
-│   └── ...
-└── index.ts          # exports all translations
+│   └── auth.json
+└── es/
+    ├── common.json
+    └── auth.json
 ```
 
-Example `locales/en/common.json`:
+Example `public/locales/en/common.json`:
 
 ```json
 {
   "welcome": "Welcome",
-  "login": {
-    "title": "Sign in",
-    "button": "Log in",
-    "forgot_password": "Forgot your password?"
-  },
   "errors": {
     "required": "This field is required",
     "email": "Please enter a valid email"
@@ -102,48 +91,43 @@ Example `locales/en/common.json`:
 }
 ```
 
+Example `public/locales/en/auth.json`:
+
+```json
+{
+  "login": {
+    "title": "Sign in",
+    "button": "Log in",
+    "email_placeholder": "Enter your email",
+    "forgot_password": "Forgot your password?"
+  }
+}
+```
+
 ## Step 4 — Generate TypeScript Types (React)
 
-Create `locales/index.ts`:
-
-```typescript
-// Auto-generated type definitions
-// Re-export this file to have type-safe translations
-
-import enCommon from './en/common.json';
-import ruCommon from './ru/common.json';
-// ... import all namespaces
-
-export type Locale = 'en' | 'ru' | 'es';
-export type Namespace = 'common' | 'auth' | 'dashboard' | 'errors';
-
-// Generate type-safe translation keys
-export type TranslationKeys = {
-  common: typeof enCommon;
-  auth: any; // Replace with actual imports
-  dashboard: any;
-  errors: any;
-};
-
-export type AllTranslationKeys = {
-  [K in keyof TranslationKeys]: keyof TranslationKeys[K];
-};
-```
+Instead of manually maintaining types, we'll use `i18next-resources-to-ts` to auto-generate them.
 
 Create `src/types/i18n.d.ts`:
 
 ```typescript
-// Augment i18next types
+// src/types/i18n.d.ts
 import 'i18next';
-import { TranslationKeys } from '../../locales';
+import type common from '../../public/locales/en/common.json';
+import type auth from '../../public/locales/en/auth.json';
 
 declare module 'i18next' {
   interface CustomTypeOptions {
     defaultNS: 'common';
-    resources: TranslationKeys;
+    resources: {
+      common: typeof common;
+      auth: typeof auth;
+    };
   }
 }
 ```
+
+This file augments the `i18next` module to provide type safety for your translation keys and namespaces. The resources will be typed based on your JSON translation files.
 
 ## Step 5 — Initialize i18n
 
@@ -153,37 +137,21 @@ declare module 'i18next' {
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-import Backend from 'i18next-http-backend'; // optional
+import Backend from 'i18next-http-backend';
 
 i18next
   .use(initReactI18next)
   .use(LanguageDetector)
-  .use(Backend) // optional: load translations via HTTP
+  .use(Backend)
   .init({
     fallbackLng: 'en',
-    defaultNS: 'common',
-    ns: ['common', 'auth', 'dashboard', 'errors'],
-    supportedLngs: ['en', 'ru', 'es'],
-    
-    // Debug in development
     debug: process.env.NODE_ENV === 'development',
-    
-    // Load strategy
-    load: 'languageOnly', // en-US → en
-    
-    // Cache
-    cache: {
-      enabled: true,
-      prefix: 'i18n_',
-      expirationTime: 7 * 24 * 60 * 60 * 1000, // 1 week
-    },
-    
-    // Interpolation
+    defaultNS: 'common',
+    ns: ['common', 'auth'],
+    supportedLngs: ['en', 'ru', 'es'],
     interpolation: {
       escapeValue: false, // React already escapes
     },
-    
-    // Backend options (if using backend)
     backend: {
       loadPath: '/locales/{{lng}}/{{ns}}.json',
     },
@@ -281,6 +249,8 @@ app.mount('#app');
 
 ### Language Switcher (React)
 
+This component allows users to change the language. The `i18next-browser-languagedetector` will automatically persist the selection.
+
 ```typescript
 // components/LanguageSwitcher.tsx
 import { useTranslation } from 'react-i18next';
@@ -294,20 +264,15 @@ const LANGUAGES = [
 export function LanguageSwitcher() {
   const { i18n } = useTranslation();
 
-  const changeLanguage = (lng: string) => {
-    i18n.changeLanguage(lng);
-    localStorage.setItem('preferred-language', lng);
-  };
-
   return (
     <div className="language-switcher">
       {LANGUAGES.map((lang) => (
         <button
           key={lang.code}
-          onClick={() => changeLanguage(lang.code)}
-          className={i18n.language === lang.code ? 'active' : ''}
+          onClick={() => i18n.changeLanguage(lang.code)}
+          disabled={i18n.language === lang.code}
         >
-          <span>{lang.flag}</span> {lang.name}
+          <span role="img" aria-label={lang.name}>{lang.flag}</span> {lang.name}
         </button>
       ))}
     </div>
@@ -317,23 +282,16 @@ export function LanguageSwitcher() {
 
 ### Type-safe Hook (React)
 
+With the augmented types, the standard `useTranslation` hook is now fully type-safe. No custom hook is needed.
+
 ```typescript
-// hooks/useTypedTranslation.ts
+// No custom hook needed!
 import { useTranslation } from 'react-i18next';
-import { AllTranslationKeys } from '../locales';
 
-export function useTypedTranslation() {
-  const { t, i18n, ready } = useTranslation();
-
-  const typedT = (key: AllTranslationKeys, options?: any) => {
-    return t(key as string, options);
-  };
-
-  return {
-    t: typedT,
-    i18n,
-    ready,
-  };
+function MyComponent() {
+  const { t } = useTranslation('auth');
+  // t is now type-safe and will autocomplete keys from auth.json
+  return <p>{t('login.title')}</p>; 
 }
 ```
 
@@ -366,17 +324,17 @@ export function useTypedI18n() {
 ### React Component
 
 ```typescript
-import { useTypedTranslation } from '../hooks/useTypedTranslation';
+import { useTranslation } from 'react-i18next';
 
 function LoginForm() {
-  const { t } = useTypedTranslation();
+  const { t } = useTranslation('auth');
 
   return (
     <form>
-      <h1>{t('auth.login.title')}</h1>
-      <input placeholder={t('auth.login.email_placeholder')} />
-      <button>{t('auth.login.button')}</button>
-      <a href="/forgot">{t('auth.login.forgot_password')}</a>
+      <h1>{t('login.title')}</h1>
+      <input placeholder={t('login.email_placeholder')} />
+      <button>{t('login.button')}</button>
+      <a href="/forgot">{t('login.forgot_password')}</a>
     </form>
   );
 }
@@ -403,39 +361,43 @@ const { t } = useTypedI18n();
 
 ## Step 9 — Scripts for Package.json
 
-Add these scripts to `package.json`:
+Add these scripts to `package.json` to help with translation management:
 
 ```json
 {
   "scripts": {
     "i18n:extract": "i18next-parser -c i18next-parser.config.js",
-    "i18n:sync": "npm run i18n:extract && git add locales/",
-    "i18n:compile": "tsc --noEmit src/types/i18n.d.ts"
+    "i18n:types": "i18next-resources-to-ts --input \"public/locales/**/*.json\" --output \"src/types/i18n-resources.d.ts\""
   }
 }
 ```
 
-### i18next-parser.config.js (optional)
+- `i18n:extract` - Extracts translation keys from your code.
+- `i18n:types` - Generates TypeScript types from your translation files.
+
+### i18next-parser.config.js
+
+This file configures how `i18next-parser` extracts keys from your code.
 
 ```javascript
 module.exports = {
   locales: ['en', 'ru', 'es'],
-  output: 'locales/$LOCALE/$NAMESPACE.json',
-  input: ['src/**/*.{ts,tsx,vue}'],
+  output: 'public/locales/$LOCALE/$NAMESPACE.json',
+  input: ['src/**/*.{ts,tsx,js,jsx}'],
+  defaultNamespace: 'common',
   keySeparator: '.',
   namespaceSeparator: ':',
-  defaultValue: (locale, namespace, key) => key,
   sort: true,
+  createOldCatalogs: false,
+  defaultValue: (locale, namespace, key) => key,
 };
 ```
 
 ## Done Checklist
 
-- ✅ Dependencies installed (i18next, react-i18next/vue-i18n)
-- ✅ `locales/` structure created with JSON files
-- ✅ i18n configuration file created (TypeScript types included)
-- ✅ Framework integration (Next.js/Vue main file)
-- ✅ Language switcher component
-- ✅ Type-safe translation hooks
-- ✅ Package.json scripts for extraction/compilation
-- ✅ Translation keys are type-safe in components
+- ✅ Dependencies installed (`i18next`, `react-i18next`, etc.)
+- ✅ `public/locales/` structure created with JSON files
+- ✅ i18n configuration file created and type-safe
+- ✅ Framework integration updated (Next.js/Vue)
+- ✅ Language switcher component added
+- ✅ `package.json` scripts for key extraction and type generation
