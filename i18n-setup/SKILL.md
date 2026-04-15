@@ -33,33 +33,39 @@ If unclear, ask:
 
 ## Step 2 — Install Dependencies
 
+> **Note**: Use the package manager detected/selected in Step 1.
+> - `npm` → `npm i` / `npm i -D`
+> - `yarn` → `yarn add` / `yarn add -D`
+> - `pnpm` → `pnpm add` / `pnpm add -D`
+
+Below examples use `{PM}` as placeholder — replace with your package manager.
+
 ### React/Next.js
 
 ```bash
-# npm
-npm i i18next react-i18next i18next-browser-languagedetector
+{PM} i i18next react-i18next i18next-browser-languagedetector
 
 # optional: backend for loading translations
-npm i i18next-http-backend
+{PM} i i18next-http-backend
 
 # optional: SSR support (Next.js)
-npm i next-i18next
+{PM} i next-i18next
 
 # types
-npm i -D @types/i18next
+{PM} i -D @types/i18next
 ```
 
 ### Vue 2/3
 
 ```bash
 # Vue 2
-npm i vue-i18n@8
+{PM} i vue-i18n@8
 
 # Vue 3
-npm i vue-i18n@9
+{PM} i vue-i18n@9
 
 # Composition API helpers (optional)
-npm i @vueuse/core
+{PM} i @vueuse/core
 ```
 
 ## Step 3 — Create Translation Structure
