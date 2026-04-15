@@ -70,46 +70,67 @@ Ask the user these questions before generating. Default values are in brackets.
 ### Token Storage Abstraction
 
 ```typescript
-// Adapt based on answer to question 1
-type TokenStorage = {
-  get(): string | null;
-  set(token: string): void;
-  remove(): void;
+// Safe storage wrapper — works in SSR and private modes
+const safeStorage = {
+  get: (key: string): string | null => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage
+        ? localStorage.getItem(key)
+        : null;
+    } catch {
+      return null;
+    }
+  },
+  set: (key: string, value: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem(key, value);
+      }
+    } catch {
+      // silently ignore — quota exceeded or disabled
+    }
+  },
+  remove: (key: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.removeItem(key);
+      }
+    } catch {
+      // silently ignore
+    }
+  },
 };
 
-// localStorage
-const tokenStorage: TokenStorage = {
-  get: () => localStorage.getItem('ACCESS_TOKEN_KEY'),
-  set: (token) => localStorage.setItem('ACCESS_TOKEN_KEY', token),
-  remove: () => localStorage.removeItem('ACCESS_TOKEN_KEY'),
-};
-
-// Cookies
-const tokenStorage: TokenStorage = {
-  get: () => getCookie('ACCESS_TOKEN_KEY'),
-  set: (token) => setCookie('ACCESS_TOKEN_KEY', token),
-  remove: () => deleteCookie('ACCESS_TOKEN_KEY'),
-};
-
-// Memory
-let memoryToken: string | null = null;
-const tokenStorage: TokenStorage = {
-  get: () => memoryToken,
-  set: (token) => { memoryToken = token; },
-  remove: () => { memoryToken = null; },
+// Use storage variants:
+const tokenStorage = {
+  // localStorage
+  get: () => safeStorage.get('ACCESS_TOKEN_KEY'),
+  set: (t: string) => safeStorage.set('ACCESS_TOKEN_KEY', t),
+  remove: () => safeStorage.remove('ACCESS_TOKEN_KEY'),
 };
 ```
 
-### Refresh Flow
+### Refresh Flow with Queue (prevents race conditions)
 
 ```typescript
-// Strategy 2: HttpOnly cookie — no JS refresh needed
-// Just attach token if present, let server handle 401
+interface RefreshResponse {
+  accessToken: string;
+  [key: string]: unknown;  // allows extra fields
+}
 
-// Strategy 3: Refresh endpoint
+type PendingRequest = { resolve: (token: string) => void; reject: () => void };
+
+let isRefreshing = false;
+let pendingRequests: PendingRequest[] = [];
+
+function processQueue(error: Error | null, token: string | null) {
+  pendingRequests.forEach((req) => (error ? req.reject() : req.resolve(token!)));
+  pendingRequests = [];
+}
+
 async function refreshToken(): Promise<string | null> {
   try {
-    const { data } = await axios.post<{ accessToken: string }>(REFRESH_ENDPOINT);
+    const { data } = await axios.post<RefreshResponse>(REFRESH_ENDPOINT);
     tokenStorage.set(data.accessToken);
     return data.accessToken;
   } catch {
@@ -131,10 +152,16 @@ const api: AxiosInstance = axios.create({
 });
 ```
 
-### Request Interceptor (attach token)
+### Request Interceptor
 
 ```typescript
 api.interceptors.request.use(async (config) => {
+  // Skip auth header for public routes
+  if (config.headers['X-Skip-Auth']) {
+    delete config.headers['X-Skip-Auth'];
+    return config;
+  }
+
   const token = tokenStorage.get();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -143,7 +170,7 @@ api.interceptors.request.use(async (config) => {
 });
 ```
 
-### Response Interceptor (refresh + error handling)
+### Response Interceptor (race-safe refresh + error handling)
 
 ```typescript
 api.interceptors.response.use(
@@ -151,15 +178,35 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
 
-    // Strategy 3: Handle 401 + refresh
+    // Strategy 3: Handle 401 with refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
+      // If already refreshing — queue this request
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          pendingRequests.push({
+            resolve: (token: string) => {
+              originalRequest.headers!.Authorization = `Bearer ${token}`;
+              resolve(api(originalRequest));
+            },
+            reject,
+          });
+        });
+      }
+
+      isRefreshing = true;
       const newToken = await refreshToken();
-      if (newToken && originalRequest.headers) {
-        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+      isRefreshing = false;
+
+      if (newToken && newToken !== 'null') {
+        processQueue(null, newToken);
+        originalRequest.headers!.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);
       }
+
+      // Refresh failed — reject all queued requests
+      processQueue(new Error('Refresh failed'), null);
     }
 
     // Centralized error handling
@@ -170,10 +217,36 @@ api.interceptors.response.use(
 );
 ```
 
-### Error Handler (adapt based on question 4)
+### Retry Logic (excluded from refresh endpoint)
+
+```typescript
+import axiosRetry from 'axios-retry';
+
+axiosRetry(api, {
+  retries: RETRY_COUNT,
+  retryDelay: (count) => count * 1000,
+  retryCondition: (error) => {
+    // Never retry the refresh endpoint
+    const url = error.config?.url || '';
+    if (url.includes(REFRESH_ENDPOINT)) return false;
+
+    return (
+      error.code === 'ECONNRESET' ||
+      error.code === 'ETIMEDOUT' ||
+      error.response?.status === 429 ||
+      (error.response?.status ?? 0) >= 500
+    );
+  },
+});
+```
+
+### Error Handler
 
 ```typescript
 function handleError(error: AxiosError): void {
+  // Skip if request was already retried and failed
+  if (error.code === 'ECONNABORTED') return;
+
   switch (error.response?.status) {
     case 401:
       tokenStorage.remove();
@@ -192,7 +265,6 @@ function handleError(error: AxiosError): void {
       break;
   }
 
-  // Option 2: send to error tracking
   if (errorTracking) {
     errorTracking.captureException(error);
   }
@@ -202,18 +274,25 @@ function handleError(error: AxiosError): void {
 ### Typed API Methods
 
 ```typescript
-// Generic helpers for all requests
 async function get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const { data } = await api.get<T>(url, config);
   return data;
 }
 
-async function post<T, D = unknown>(url: string, payload?: D, config?: AxiosRequestConfig): Promise<T> {
+async function post<T, D = unknown>(
+  url: string,
+  payload?: D,
+  config?: AxiosRequestConfig
+): Promise<T> {
   const { data } = await api.post<T>(url, payload, config);
   return data;
 }
 
-async function put<T, D = unknown>(url: string, payload?: D, config?: AxiosRequestConfig): Promise<T> {
+async function put<T, D = unknown>(
+  url: string,
+  payload?: D,
+  config?: AxiosRequestConfig
+): Promise<T> {
   const { data } = await api.put<T>(url, payload, config);
   return data;
 }
@@ -222,58 +301,27 @@ async function del<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const { data } = await api.delete<T>(url, config);
   return data;
 }
-
-// Example typed endpoint:
-// GET /users → User[]
-// POST /users → User (created)
-interface User {
-  id: string;
-  name: string;
-  email: string;
-}
-
-const users = await get<User[]>('/users');
-const newUser = await post<User, Omit<User, 'id'>>('/users', { name: 'John', email: 'john@example.com' });
-```
-
-### Retry Logic
-
-```typescript
-import axiosRetry from 'axios-retry';
-
-axiosRetry(api, {
-  retries: RETRY_COUNT,
-  retryDelay: (retryCount) => Math.pow(2, retryCount) * 1000, // exponential backoff
-  retryCondition: (error) => {
-    return (
-      error.code === 'ECONNRESET' ||
-      error.code === 'ETIMEDOUT' ||
-      error.response?.status === 429 ||
-      (error.response?.status ?? 0) >= 500
-    );
-  },
-});
 ```
 
 ## Dependencies
 
-Based on the survey, tell the user to install:
-
 ```bash
 npm i axios
-npm i -D axios-retry @types/axios  # or use built-in types
+npm i -D axios-retry
 ```
 
-Or if using Sentry:
-
+With Sentry:
 ```bash
 npm i @sentry/browser
 ```
 
+Note: `@types/axios` is not needed (Axios ships its own types).
+
 ## Done Checklist
 
-- `src/utils/api.ts` (or chosen path) exists with typed methods
-- All interceptors configured for the chosen storage/refresh strategy
-- Errors are handled centrally
-- Retry works for network errors and 5xx/429
-- User knows which dependencies to install
+- File created at chosen path with typed methods
+- Token storage with SSR-safe wrapper
+- Refresh with race-condition protection (queue + flag)
+- Retry excludes refresh endpoint
+- Centralized error handling
+- All dependencies listed

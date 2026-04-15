@@ -44,7 +44,7 @@ Below examples use `{PM}` as placeholder — replace with your package manager.
 # Core i18next libraries
 {PM} i i18next react-i18next i18next-browser-languagedetector i18next-http-backend
 
-# Optional: SSR support for Next.js
+# Optional: SSR support for Next.js (Pages Router only)
 {PM} i next-i18next
 
 # Dev dependencies for type generation and key extraction
@@ -106,28 +106,44 @@ Example `public/locales/en/auth.json`:
 
 ## Step 4 — Generate TypeScript Types (React)
 
-Instead of manually maintaining types, we'll use `i18next-resources-to-ts` to auto-generate them.
+Instead of manually maintaining types, you can either generate `.d.ts` files from JSON, or import JSON directly.
 
-Create `src/types/i18n.d.ts`:
+**Option A: Generate types from JSON (no tsconfig changes)**
+
+Add to `package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "i18n:types": "i18next-resources-to-ts --input 'public/locales/**/*.json' --output 'src/types/i18n.d.ts'"
+  }
+}
+```
+
+Then create a small `src/types/i18next.d.ts` that references the generated declarations (exact module names depend on your generator output).
+
+**Option B: Direct JSON import (requires tsconfig)**
+
+If your `tsconfig.json` has `"resolveJsonModule": true` and `"esModuleInterop": true`:
 
 ```typescript
-// src/types/i18n.d.ts
+// src/i18n/types.ts
 import 'i18next';
-import type common from '../../public/locales/en/common.json';
-import type auth from '../../public/locales/en/auth.json';
+import en_common from '../../public/locales/en/common.json';
+import en_auth from '../../public/locales/en/auth.json';
 
 declare module 'i18next' {
   interface CustomTypeOptions {
     defaultNS: 'common';
     resources: {
-      common: typeof common;
-      auth: typeof auth;
+      common: typeof en_common;
+      auth: typeof en_auth;
     };
   }
 }
 ```
 
-This file augments the `i18next` module to provide type safety for your translation keys and namespaces. The resources will be typed based on your JSON translation files.
+The generator approach is convenient for large projects; direct JSON import is simplest if your tsconfig allows it.
 
 ## Step 5 — Initialize i18n
 
@@ -183,35 +199,47 @@ export const i18n = createI18n({
 
 ## Step 6 — Integration with Framework
 
-### Next.js (App Router)
+### Next.js App Router
+
+For App Router, use `i18next` with a provider pattern:
+
+**1. Create `src/i18n/provider.tsx`:**
 
 ```typescript
-// app/[lang]/layout.tsx
-import { i18nRouter } from 'next-i18next-router';
+'use client';
 
-export default function RootLayout({
-  children,
-  params,
-}: {
-  children: React.ReactNode;
-  params: { lang: string };
-}) {
+import { I18nextProvider } from 'react-i18next';
+import i18n from './config';
+
+export function I18nProvider({ children, lng }: { children: React.ReactNode; lng: string }) {
   return (
-    <html lang={params.lang}>
+    <I18nextProvider i18n={i18n}>
+      {children}
+    </I18nextProvider>
+  );
+}
+```
+
+**2. Wrap root layout:**
+
+```typescript
+// app/layout.tsx
+import { I18nProvider } from '@/i18n/provider';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html>
       <body>
-        {children}
+        <I18nProvider lng="en">{children}</I18nProvider>
       </body>
     </html>
   );
 }
-
-// next.config.js
-const { i18n } = require('./next-i18next.config');
-
-module.exports = {
-  i18n,
-};
 ```
+
+**3. For dynamic locale**, use middleware or read from cookie/header.
+
+Note: for App Router, `next-i18next` is designed around the Pages Router. Prefer an `i18next` provider approach (as shown above) or consider `next-intl`.
 
 ### Next.js (Pages Router) - `next-i18next.config.js`
 
@@ -367,13 +395,13 @@ Add these scripts to `package.json` to help with translation management:
 {
   "scripts": {
     "i18n:extract": "i18next-parser -c i18next-parser.config.js",
-    "i18n:types": "i18next-resources-to-ts --input \"public/locales/**/*.json\" --output \"src/types/i18n-resources.d.ts\""
+    "i18n:types": "i18next-resources-to-ts --input 'public/locales/**/*.json' --output 'src/types/i18n.d.ts'"
   }
 }
 ```
 
-- `i18n:extract` - Extracts translation keys from your code.
-- `i18n:types` - Generates TypeScript types from your translation files.
+- `i18n:extract` - Extracts translation keys from your code into JSON files.
+- `i18n:types` - Generates TypeScript types from translation JSON files.
 
 ### i18next-parser.config.js
 

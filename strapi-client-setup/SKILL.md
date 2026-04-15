@@ -139,6 +139,11 @@ export interface StrapiResponse<T> {
   };
 }
 
+// Wrapper for populated relations
+export interface StrapiRelation<T> {
+  data: T;
+}
+
 // v3 response wrapper
 export interface StrapiResponseV3<T> {
   data: T;
@@ -372,9 +377,6 @@ function getBestImage(
 
 import fs from 'fs';
 import path from 'path';
-
-const STRAPI_URL = process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
-
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
@@ -423,10 +425,16 @@ function getTypeForField(field: any): string {
     case 'enumeration':
       return field.enum.map((v: string) => `'${v}'`).join(' | ');
     case 'media':
-      return `StrapiResponse<StrapiMedia${field.multiple ? '[]' : ''}>`;
+      // In Strapi v4/v5 media fields are relations: { data: ... }
+      return field.multiple
+        ? `StrapiRelation<StrapiMedia[]>`
+        : `StrapiRelation<StrapiMedia | null>`;
     case 'relation':
       const targetInterface = getInterfaceName(field.target);
-      return `StrapiResponse<${targetInterface}${field.relation.endsWith('Many') ? '[]' : ''}>`;
+      const isMultiple = field.relation.endsWith('Many');
+      // A single relation can be null, a multiple relation is an empty array
+      const relationType = isMultiple ? `${targetInterface}[]` : `${targetInterface} | null`;
+      return `StrapiRelation<${relationType}>`;
     case 'component':
       const componentInterface = getInterfaceName(field.component);
       return `${componentInterface}${field.repeatable ? '[]' : ''}`;
@@ -537,6 +545,8 @@ main().catch(console.error);
 ```
 
 ### 4. `lib/strapi/fetch.ts` (if not using axios)
+
+```typescript
 async function strapiFetch<T>(
   endpoint: string,
   options?: RequestInit & {
@@ -545,7 +555,7 @@ async function strapiFetch<T>(
 ): Promise<T> {
   const baseUrl = process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
   let url = `${baseUrl}/api${endpoint}`;
-  
+
   if (options?.params) {
     const searchParams = new URLSearchParams();
     Object.entries(options.params).forEach(([key, value]) => {
@@ -553,7 +563,7 @@ async function strapiFetch<T>(
     });
     url += `?${searchParams.toString()}`;
   }
-  
+
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -561,13 +571,28 @@ async function strapiFetch<T>(
       ...options?.headers,
     },
   });
-  
+
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error?.error?.message || `HTTP ${response.status}`);
+    const contentType = response.headers.get('content-type') || '';
+    let errorMessage = `HTTP ${response.status}`;
+
+    if (contentType.includes('application/json')) {
+      try {
+        const error = await response.json();
+        errorMessage = error?.error?.message || error?.message || errorMessage;
+      } catch {
+        // ignore parse error
+      }
+    } else {
+      // Strapi may return HTML on errors
+      errorMessage = `Strapi error ${response.status}`;
+    }
+
+    throw new Error(errorMessage);
   }
-  
-  return response.json();
+
+  const text = await response.text();
+  return text ? JSON.parse(text) : ({} as T);
 }
 ```
 
