@@ -20,6 +20,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill strapi-client-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill zustand-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -43,6 +45,7 @@
 | **testing-setup** | Универсальный фреймворк для написания unit и интеграционных тестов |
 | **axios-setup** | Типизированный API-клиент с interceptors, retry и централизованной обработкой ошибок |
 | **strapi-client-setup** | Типизированный клиент для Strapi с поддержкой v3/v4/v5, populate и медиафайлами |
+| **zustand-setup** | Легкий state management для React с хуками и middleware |
 
 ## Примеры доступных путей
 
