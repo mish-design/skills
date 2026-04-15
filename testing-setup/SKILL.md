@@ -1,78 +1,209 @@
 ---
 name: testing-setup
-description: Set up a universal testing framework (Vitest/Jest) with Testing Library. Use this skill when user mentions setting up tests, test framework, unit tests, testing library, or asks to add testing to their project. Triggers on phrases like "set up testing", "add tests", "configure vitest", "jest setup", "testing library", or when onboarding a new project.
+description: Set up Vitest/Jest with Testing Library. Trigger on: testing setup, add tests, vitest, jest, testing library, unit tests.
 ---
 
 # Testing Setup
 
-Installs and configures a testing framework with coverage support. Automatically detects existing setup or initializes a new one.
+Install and configure a testing framework with coverage. Detect existing setup or initialize new.
 
 ## Steps
 
-### 1. Detect or suggest framework
+### 1. Detect existing setup
 
-Check `package.json` for existing test dependencies:
+Check `package.json` and project structure:
 
-- If `vitest` found → extend existing config
-- If `jest` found → extend existing config
-- If neither found → ask user to choose (Vitest recommended for modern projects)
+**Next.js detection:**
+- `next` in dependencies → use `next/jest` for Jest, or Vitest for custom setup
+
+**Test framework detection:**
+- `vitest` in devDependencies → extend existing
+- `jest` in devDependencies → extend existing
+- Neither found → ask user to choose (Vitest recommended)
+
+**UI framework detection** (check dependencies):
+- `react` → React Testing Library
+- `vue` → Vue Testing Library
+- `svelte` → Svelte Testing Library
+- None → `@testing-library/dom` only
 
 ### 2. Detect package manager
 
-Check which package manager is used in the project:
-
-- If `pnpm-lock.yaml` exists → use `pnpm`
-- If `yarn.lock` exists → use `yarn`
-- If `bun.lock` exists → use `bun`
-- Default → use `npm`
+- `pnpm-lock.yaml` → `pnpm`
+- `yarn.lock` → `yarn`
+- `bun.lock` → `bun`
+- `package-lock.json` → `npm`
+- Default → `npm`
 
 ### 3. Install dependencies
 
-**For Vitest (recommended):**
+**For Vitest:**
+
+```
+Basic:        vitest @testing-library/dom jsdom @vitest/coverage-v8
+React:        + @testing-library/react @testing-library/jest-dom @vitejs/plugin-react
+Vue:          + @testing-library/vue @testing-library/jest-dom @vitejs/plugin-vue
+Svelte:       + @testing-library/svelte @testing-library/jest-dom @sveltejs/vite-plugin-svelte
+```
 
 ```bash
-<pkg-manager> add --save-dev vitest@latest @testing-library/react@latest @testing-library/jest-dom@latest jsdom@latest @vitest/coverage-v8@latest
+<pkg-manager> add --save-dev vitest @testing-library/dom jsdom @vitest/coverage-v8
 ```
+
+Add framework-specific packages as needed.
 
 **For Jest:**
 
-```bash
-<pkg-manager> add --save-dev jest@latest @testing-library/react@latest @testing-library/jest-dom@latest jest-environment-jsdom@latest
+```
+React:   jest @testing-library/react @testing-library/jest-dom jest-environment-jsdom
+Vue:     jest @testing-library/vue @testing-library/jest-dom @vue/vue3-jest jest-environment-jsdom
+Svelte:  jest @testing-library/svelte @testing-library/jest-dom svelte-jester jest-environment-jsdom
+CSS:     identity-obj-proxy    # for CSS module mocking
 ```
 
-Replace `<pkg-manager>` with detected package manager (npm/pnpm/yarn/bun).
+```bash
+<pkg-manager> add --save-dev jest jest-environment-jsdom identity-obj-proxy
+```
+
+Add Testing Library packages matching detected UI framework. Add `identity-obj-proxy` unless project uses Next.js.
 
 ### 4. Create configuration
 
-**For Vitest** — create `vitest.config.ts` in project root:
+**Standard Vitest** — `vitest.config.ts`:
 
 ```typescript
 import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react'; // if React
+// import vue from '@vitejs/plugin-vue';   // if Vue
+// import { svelte } from '@sveltejs/vite-plugin-svelte'; // if Svelte
 
 export default defineConfig({
+  plugins: [react()], // framework plugin
   test: {
     environment: 'jsdom',
-    globals: true,
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['node_modules', 'dist', '.next'],
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html'],
-      exclude: ['node_modules/', 'src/test/'],
+      reporter: ['text', 'lcov', 'html'],
+      exclude: [
+        'node_modules',
+        'src/test/',
+        '**/*.d.ts',
+        '**/*.config.{ts,js}',
+        '**/index.ts',
+      ],
     },
   },
 });
 ```
 
-**For Jest** — create `jest.config.js` in project root:
+**Next.js + Vitest** — `vitest.config.ts`:
+
+```typescript
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    env: {
+      __NEXT_TEST_MODE: 'true',
+    },
+  },
+});
+```
+
+**Standard Jest** — `jest.config.js`:
 
 ```javascript
-export default {
-  testEnvironment: 'jest-environment-jsdom',
-  setupFilesAfterFramework: ['./src/test/setup.ts'],
+module.exports = {
+  testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['./src/test/setup.ts'],
   coverageDirectory: 'coverage',
-  collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/**/*.d.ts'],
-  testMatch: ['**/__tests__/**/*.test.{ts,tsx}'],
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
+    '!src/**/*.config.{ts,js}',
+    '!src/test/**/*',
+  ],
+  testMatch: ['**/src/**/*.{test,spec}.{ts,tsx}'],
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+  },
 };
+```
+
+**Next.js + Jest** — `jest.config.js`:
+
+```javascript
+const nextJest = require('next/jest');
+
+const createJestConfig = nextJest({ dir: './' });
+
+const customConfig = {
+  setupFilesAfterEnv: ['./src/test/setup.ts'],
+  testMatch: ['**/src/**/*.{test,spec}.{ts,tsx}'],
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+  },
+};
+
+module.exports = createJestConfig(customConfig);
+```
+
+Note: `next/jest` auto-handles CSS, SWC, and environment — no need for `identity-obj-proxy` or `testEnvironment`.
+
+**Jest + Vue** — `jest.config.js`:
+
+```javascript
+module.exports = {
+  testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['./src/test/setup.ts'],
+  moduleFileExtensions: ['js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'json', 'vue'],
+  testMatch: ['**/src/**/*.{test,spec}.{ts,tsx,vue}'],
+  transform: {
+    '^.+\\.vue$': '@vue/vue3-jest',
+    '^.+\\.tsx?$': 'ts-jest',
+  },
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+  },
+};
+```
+
+Also create `src/test/setup.ts`:
+```typescript
+import '@testing-library/jest-dom';
+```
+
+**Jest + Svelte** — `jest.config.js`:
+
+```javascript
+module.exports = {
+  testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['./src/test/setup.ts'],
+  testMatch: ['**/src/**/*.{test,spec}.{ts,tsx,svelte}'],
+  transform: {
+    '^.+\\.svelte$': 'svelte-jester',
+    '^.+\\.tsx?$': 'ts-jest',
+  },
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'svelte'],
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+  },
+};
+```
+
+Also add to `package.json`:
+```json
+"svelte-jester": { "preprocess": false }
 ```
 
 ### 5. Create setup file
@@ -83,77 +214,76 @@ Create `src/test/setup.ts`:
 import '@testing-library/jest-dom';
 ```
 
-For **Jest**, also add to `tsconfig.json`:
+**tsconfig.json** — merge into existing `compilerOptions.types`:
 
+For Vitest with `globals: true` (add `globals: true` to vitest config first):
 ```json
-{
-  "types": ["jest", "@testing-library/jest-dom"]
-}
+{ "compilerOptions": { "types": ["vitest/globals", "@testing-library/jest-dom"] } }
 ```
 
-### 5. Add scripts to `package.json`
+For Jest:
+```json
+{ "compilerOptions": { "types": ["jest", "@testing-library/jest-dom"] } }
+```
 
-Add to `"scripts"` section using JSON merge (do NOT overwrite):
+For Jest + Vue add `"vue3/jest"` to types. For Jest + Svelte add `"svelte"` to types.
 
+Do NOT overwrite — merge into existing array.
+
+### 6. Add scripts to `package.json`
+
+Merge into `"scripts"`:
+
+For Vitest:
 ```json
 "test": "vitest run",
 "test:watch": "vitest",
 "test:coverage": "vitest run --coverage"
 ```
 
-For **Jest** use:
-
+For Jest:
 ```json
 "test": "jest",
 "test:watch": "jest --watch",
 "test:coverage": "jest --coverage"
 ```
 
-### 6. Create example test (optional)
+### 7. Create example test
 
-Create `src/example.test.ts` to verify setup:
-
+**Globals-enabled** (no imports needed):
 ```typescript
-import { describe, it, expect } from 'vitest';
-
-describe('Example Test', () => {
+describe('Example', () => {
   it('should pass', () => {
-    expect(true).toBe(true);
+    expect(1 + 1).toBe(2);
   });
 });
 ```
 
-### 7. Run tests to verify
+**React:**
+```typescript
+import { render, screen } from '@testing-library/react';
+
+describe('Example', () => {
+  it('renders text', () => {
+    render(<div>Hello Tests</div>);
+    expect(screen.getByText('Hello Tests')).toBeInTheDocument();
+  });
+});
+```
+
+### 8. Verify
 
 ```bash
 <pkg-manager> run test
 ```
 
+Fix any errors before confirming.
+
 ## Done
 
-After completing these steps, confirm to the user:
-- ✅ Testing framework installed (Vitest/Jest)
-- ✅ Testing Library configured
-- ✅ Configuration file created (`vitest.config.ts` or `jest.config.js`)
-- ✅ Setup file created (`src/test/setup.ts`)
-- ✅ Scripts added to `package.json`
-- ✅ Run `<pkg-manager> run test` to verify everything works
-
-## Package Manager Detection
-
-```
-Project root contains:
-├── pnpm-lock.yaml → use pnpm
-├── yarn.lock → use yarn
-├── bun.lock → use bun
-└── package-lock.json or nothing → use npm
-```
-
-## Framework Detection Logic
-
-```
-package.json scripts.test
-├── contains "vitest" → use Vitest
-├── contains "jest" → use Jest
-└── empty/not found → default to Vitest (recommend)
-```
+Confirm to the user:
+- Test framework installed and configured for detected UI framework
+- CSS imports handled (identity-obj-proxy or next/jest)
+- Coverage enabled with proper exclusions
+- Scripts added to package.json
+- Tests passed on verification
