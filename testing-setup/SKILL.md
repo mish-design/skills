@@ -46,11 +46,27 @@ Vue:          + @testing-library/vue @testing-library/jest-dom @vitejs/plugin-vu
 Svelte:       + @testing-library/svelte @testing-library/jest-dom @sveltejs/vite-plugin-svelte
 ```
 
+Install core:
+
 ```bash
-<pkg-manager> add --save-dev vitest @testing-library/dom jsdom @vitest/coverage-v8
+<pkg-manager> add --save-dev vitest jsdom @vitest/coverage-v8
 ```
 
-Add framework-specific packages as needed.
+Then add UI framework testing libs:
+
+```bash
+# DOM-only
+<pkg-manager> add --save-dev @testing-library/dom
+
+# React
+<pkg-manager> add --save-dev @testing-library/react @testing-library/jest-dom @vitejs/plugin-react
+
+# Vue
+<pkg-manager> add --save-dev @testing-library/vue @testing-library/jest-dom @vitejs/plugin-vue
+
+# Svelte
+<pkg-manager> add --save-dev @testing-library/svelte @testing-library/jest-dom @sveltejs/vite-plugin-svelte
+```
 
 **For Jest:**
 
@@ -61,11 +77,33 @@ Svelte:  jest @testing-library/svelte @testing-library/jest-dom svelte-jester je
 CSS:     identity-obj-proxy    # for CSS module mocking
 ```
 
+Install core:
+
 ```bash
-<pkg-manager> add --save-dev jest jest-environment-jsdom identity-obj-proxy
+<pkg-manager> add --save-dev jest jest-environment-jsdom
 ```
 
-Add Testing Library packages matching detected UI framework. Add `identity-obj-proxy` unless project uses Next.js.
+Add UI framework testing libs:
+
+```bash
+# DOM-only
+<pkg-manager> add --save-dev @testing-library/dom @testing-library/jest-dom
+
+# React
+<pkg-manager> add --save-dev @testing-library/react @testing-library/jest-dom
+
+# Vue (Jest + Vue is version-sensitive; this is a common baseline)
+<pkg-manager> add --save-dev @testing-library/vue @testing-library/jest-dom @vue/vue3-jest ts-jest
+
+# Svelte (Jest + Svelte is version-sensitive; this is a common baseline)
+<pkg-manager> add --save-dev @testing-library/svelte @testing-library/jest-dom svelte-jester ts-jest
+```
+
+CSS imports (non-Next projects):
+
+```bash
+<pkg-manager> add --save-dev identity-obj-proxy
+```
 
 ### 4. Create configuration
 
@@ -73,12 +111,13 @@ Add Testing Library packages matching detected UI framework. Add `identity-obj-p
 
 ```typescript
 import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react'; // if React
-// import vue from '@vitejs/plugin-vue';   // if Vue
-// import { svelte } from '@sveltejs/vite-plugin-svelte'; // if Svelte
+// Pick ONE plugin based on your UI framework:
+// import react from '@vitejs/plugin-react';
+// import vue from '@vitejs/plugin-vue';
+// import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 export default defineConfig({
-  plugins: [react()], // framework plugin
+  // plugins: [react()], // OR [vue()], OR [svelte()]
   test: {
     environment: 'jsdom',
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
