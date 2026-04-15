@@ -66,7 +66,6 @@ Ask these questions before generating:
 **Dependencies:**
 ```bash
 <pkg-manager> add zustand
-<pkg-manager> add -D @types/node  # if using TypeScript
 ```
 
 **Generated file (`lib/store/store.ts`):**
@@ -95,53 +94,21 @@ export const useCounterStore = create<CounterStore>((set) => ({
 **Dependencies:**
 ```bash
 <pkg-manager> add zustand
-<pkg-manager> add -D @types/node
-
-# Optional middleware
-<pkg-manager> add zustand/middleware
+# Optional middleware, install if selected
+<pkg-manager> add immer
 ```
 
-**Generated files:**
+**Generated file (`lib/store/store.ts`):**
 
-**1. `lib/store/middleware.ts`:**
+This setup demonstrates how to correctly compose multiple middlewares. The order is important: `immer` is inside, then `persist`, and `devtools` wraps everything.
+
 ```typescript
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
+import type { StateCreator } from 'zustand'
 
-// Combine middleware based on survey
-export function createStore<T>(
-  storeName: string,
-  initialState: T,
-  actions: (set: any, get: any) => any
-) {
-  let store = create(actions)
-  
-  if (survey.includes('immer')) {
-    store = create(immer(actions))
-  }
-  
-  if (survey.includes('persist')) {
-    store = create(
-      persist(actions, {
-        name: storeName,
-        storage: localStorage, // or sessionStorage
-      })
-    )
-  }
-  
-  if (survey.includes('devtools')) {
-    store = create(devtools(actions, { name: storeName }))
-  }
-  
-  return store
-}
-```
-
-**2. `lib/store/store.ts`:**
-```typescript
-import { createStore } from './middleware'
-
+// Define your state and actions
 interface AppState {
   user: { name: string; email: string } | null
   theme: 'light' | 'dark'
@@ -151,101 +118,78 @@ interface AppState {
   toggleSidebar: () => void
 }
 
-export const useAppStore = createStore<AppState>(
-  'app-store',
-  {
-    user: null,
-    theme: 'light',
-    sidebarOpen: false,
-  },
-  (set, get) => ({
-    setUser: (user) => set({ user }),
-    toggleTheme: () => set((state) => ({ 
-      theme: state.theme === 'light' ? 'dark' : 'light' 
-    })),
-    toggleSidebar: () => set((state) => ({ 
-      sidebarOpen: !state.sidebarOpen 
-    })),
-  })
+// The initial state and actions are combined in a single creator function
+const createAppState: StateCreator<
+  AppState,
+  [ ['zustand/devtools', never], ['zustand/persist', unknown], ['zustand/immer', never] ],
+  [],
+  AppState
+> = (set) => ({
+  user: null,
+  theme: 'light',
+  sidebarOpen: false,
+  setUser: (user) => set({ user }),
+  toggleTheme: () =>
+    set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
+  toggleSidebar: () =>
+    set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+})
+
+// Create the store, composing the middlewares
+export const useAppStore = create<AppState>()(
+  devtools(
+    persist(
+      immer(createAppState),
+      {
+        name: 'app-store', // Key for localStorage
+        // Optional: specify a custom storage provider
+        // storage: createJSONStorage(() => sessionStorage),
+      }
+    ),
+    { name: 'AppStore' } // Name for Redux DevTools
+  )
 )
 ```
 
 ### Level 3: Advanced (Next.js/SSR Setup)
 
-**Goal:** SSR-compatible store with hydration.
+**Goal:** SSR-compatible store that safely handles hydration to prevent client-server mismatches.
 
 **Dependencies:**
 ```bash
 <pkg-manager> add zustand
-<pkg-manager> add zustand/middleware
-<pkg-manager> add -D @types/node
+<pkg-manager> add zustand/middleware # For persist/devtools
+<pkg-manager> add immer # If using immer
 ```
 
 **Generated files:**
 
-**1. `lib/store/hydration.ts`:**
+**1. `lib/store/store.ts`:** (No complex SSR-specific store needed, we use a custom hook instead)
+
+The store is defined as in Level 2. The magic happens in the component that uses it.
+
+**2. `hooks/use-hydrated-store.ts`:**
+
+This simple but powerful hook solves SSR hydration issues. It ensures that the client-side state (e.g., from `localStorage`) is only used *after* the initial server render is complete.
+
 ```typescript
-'use client'
+import { useState, useEffect } from 'react'
 
-import { useEffect, useState } from 'react'
-
-/**
- * Hook to prevent hydration mismatch in Next.js
- */
-export function useHydration(store: any, callback?: () => void) {
-  const [hydrated, setHydrated] = useState(false)
+const useHydratedStore = <T, F>(
+  store: (callback: (state: T) => unknown) => unknown,
+  callback: (state: T) => F
+) => {
+  const result = store(callback) as F;
+  const [hydratedResult, setHydratedResult] = useState<F>();
 
   useEffect(() => {
-    const unsub = store.persist?.onFinishHydration(() => {
-      setHydrated(true)
-      callback?.()
-    })
+    setHydratedResult(result);
+  }, [result]);
 
-    setHydrated(true)
-    return () => {
-      unsub?.()
-    }
-  }, [store, callback])
+  return hydratedResult;
+};
 
-  return hydrated
-}
-```
-
-**2. `lib/store/ssr-store.ts`:**
-```typescript
-import { create } from 'zustand'
-import { persist, devtools } from 'zustand/middleware'
-import { createJSONStorage } from 'zustand/middleware'
-
-// SSR-safe store creation
-export function createSSRStore<T>(
-  name: string,
-  initialState: T,
-  actions: (set: any, get: any) => any
-) {
-  // Check if we're in browser
-  const isClient = typeof window !== 'undefined'
-  
-  return create<T>()(
-    devtools(
-      persist(
-        actions,
-        {
-          name,
-          storage: createJSONStorage(() => 
-            isClient ? localStorage : {
-              getItem: () => null,
-              setItem: () => {},
-              removeItem: () => {},
-            }
-          ),
-          skipHydration: !isClient,
-        }
-      ),
-      { name }
-    )
-  )
-}
+export default useHydratedStore;
 ```
 
 **3. `lib/store/slices/`** (if multiple slices selected):
@@ -276,17 +220,23 @@ const { theme, toggleTheme } = useAppStore()
 ```
 
 ### SSR Usage (Next.js)
+
+To use a persisted store in a Next.js component, use the `useHydratedStore` hook to prevent hydration mismatches. It will return `undefined` on the server and the actual state on the client after hydration.
+
 ```typescript
 'use client'
 
 import { useAppStore } from '@/lib/store/store'
-import { useHydration } from '@/lib/store/hydration'
+import useHydratedStore from '@/hooks/use-hydrated-store'
 
 function ThemeToggle() {
-  const { theme, toggleTheme } = useAppStore()
-  const hydrated = useHydration(useAppStore)
+  const theme = useHydratedStore(useAppStore, (state) => state.theme)
+  const { toggleTheme } = useAppStore()
   
-  if (!hydrated) return <div>Loading...</div>
+  // Render a placeholder or null on the server and during hydration
+  if (!theme) {
+    return <div style={{width: 80, height: 24}} /> // Or some loading skeleton
+  }
   
   return <button onClick={toggleTheme}>Theme: {theme}</button>
 }
@@ -315,23 +265,39 @@ const { user, theme } = useAppStore(
 ```
 
 ### 3. **Slice Pattern** (for large stores)
+
+This pattern helps organize a large store into smaller, feature-based slices.
+
 ```typescript
-// Create slices separately
-const createAuthSlice = (set, get) => ({
+import { StateCreator } from 'zustand'
+
+// 1. Define the state and actions for each slice
+interface AuthSlice {
+  user: { name: string } | null;
+  login: (user: { name: string }) => void;
+  logout: () => void;
+}
+
+interface UiSlice {
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
+}
+
+// 2. Create the slice creator functions
+const createAuthSlice: StateCreator<AuthSlice> = (set) => ({
   user: null,
   login: (user) => set({ user }),
   logout: () => set({ user: null }),
 })
 
-const createUiSlice = (set, get) => ({
+const createUiSlice: StateCreator<UiSlice> = (set) => ({
   theme: 'light',
-  toggleTheme: () => set((state) => ({ 
-    theme: state.theme === 'light' ? 'dark' : 'light' 
-  })),
+  toggleTheme: () => set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
 })
 
-// Combine slices
-export const useStore = create((...a) => ({
+// 3. Combine your slices in the main store
+// Note: The `&` operator is used to combine slice types
+export const useBoundStore = create<AuthSlice & UiSlice>()((...a) => ({
   ...createAuthSlice(...a),
   ...createUiSlice(...a),
 }))

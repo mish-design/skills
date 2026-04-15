@@ -202,28 +202,27 @@ async function strapiGet<T>(
  * populate({ author: '*', cover: 'url' }) → 'populate[author]=*&populate[cover]=url'
  */
 function populate(fields: PopulateParam): string {
-  if (fields === '*') return 'populate=*';
-  
-  if (Array.isArray(fields)) {
-    return `populate=${fields.join(',')}`;
-  }
-  
-  if (typeof fields === 'object') {
-    return Object.entries(fields)
-      .map(([key, value]) => {
-        if (value === '*') return `populate[${key}]=*`;
-        if (Array.isArray(value)) return `populate[${key}]=${value.join(',')}`;
-        if (typeof value === 'object') {
-          return Object.entries(value)
-            .map(([k, v]) => `populate[${key}][${k}]=${v}`)
-            .join('&');
+  if (!fields) return '';
+
+  function buildQuery(obj: any, prefix = '') {
+    const queryParts: string[] = [];
+
+    if (typeof obj === 'string') {
+      queryParts.push(`${prefix}=${obj}`);
+    } else if (Array.isArray(obj)) {
+      queryParts.push(`${prefix}=${obj.join(',')}`);
+    } else if (typeof obj === 'object') {
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const newPrefix = prefix ? `${prefix}[${key}]` : key;
+          queryParts.push(...buildQuery(obj[key], newPrefix));
         }
-        return `populate[${key}]=${value}`;
-      })
-      .join('&');
+      }
+    }
+    return queryParts;
   }
-  
-  return '';
+
+  return buildQuery(fields, 'populate').join('&');
 }
 
 /**
@@ -264,20 +263,38 @@ function pagination(options: { page?: number; pageSize?: number; start?: number;
  * filters({ price: { $gte: 100 } })
  *   → 'filters[price][$gte]=100'
  */
-function filters(obj: Record<string, unknown>, prefix = 'filters'): string {
-  return Object.entries(obj)
-    .map(([key, value]) => {
-      if (value === null || value === undefined) return '';
+function filters(filtersObj: Record<string, any>): string {
+  const parts: string[] = [];
+
+  function stringify(obj: Record<string, any>, prefix = 'filters') {
+    for (const key in obj) {
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+
+      const value = obj[key];
+      const newPrefix = `${prefix}[${key}]`;
       
-      if (typeof value === 'object') {
-        const [operator, operand] = Object.entries(value)[0] as [string, unknown];
-        return `${prefix}[${key}][${operator}]=${operand}`;
+      if (value === null) {
+        parts.push(`${newPrefix}[$null]=true`);
+        continue;
       }
-      
-      return `${prefix}[${key}][$eq]=${value}`;
-    })
-    .filter(Boolean)
-    .join('&');
+
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        const isOperatorGroup = Object.keys(value).every(k => k.startsWith('$'));
+        if (isOperatorGroup) {
+          for(const op in value) {
+            parts.push(`${newPrefix}[${op}]=${encodeURIComponent(value[op])}`);
+          }
+        } else {
+          stringify(value, newPrefix);
+        }
+      } else {
+        parts.push(`${newPrefix}[$eq]=${encodeURIComponent(value)}`);
+      }
+    }
+  }
+
+  stringify(filtersObj);
+  return parts.join('&');
 }
 
 /**
@@ -292,14 +309,12 @@ function sort(
   field: string | string[],
   direction?: 'asc' | 'desc' | ('asc' | 'desc')[]
 ): string {
-  const dirs = Array.isArray(direction) ? direction : 
-    (direction ? [direction] : ['asc']);
-  
+  const dirs = Array.isArray(direction) ? direction : (direction ? [direction] : ['asc']);
   const fields = Array.isArray(field) ? field : [field];
-  
+
   return fields
-    .map((f, i) => `${f}:${dirs[i] || dirs[0]}`)
-    .join('&sort=');
+    .map((f, i) => `sort=${f}:${dirs[i] || 'asc'}`)
+    .join('&');
 }
 
 /**
@@ -360,77 +375,161 @@ import path from 'path';
 
 const STRAPI_URL = process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
 
-async function fetchContentTypes() {
-  try {
-    const response = await fetch(`${STRAPI_URL}/api/content-types?populate=*`);
-    
-    if (!response.ok) {
-      console.error(`Failed to fetch content types: ${response.status}`);
-      return null;
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching Strapi content types:', error);
-    return null;
+import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
+
+// --- CONFIGURATION ---
+const STRAPI_URL = process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
+const API_TOKEN = process.env.STRAPI_API_TOKEN;
+const OUTPUT_DIR = join(process.cwd(), 'src', 'types', 'strapi');
+
+// --- UTILITY FUNCTIONS ---
+
+function toPascalCase(str: string): string {
+  return str.replace(/(?:^|[-_])(\w)/g, (_, c) => c.toUpperCase()).replace(/[-_]/g, '');
+}
+
+function getInterfaceName(uid: string): string {
+  // e.g., api::article.article -> Article
+  const parts = uid.split('.');
+  const name = parts[parts.length - 1];
+  return toPascalCase(name);
+}
+
+// --- TYPE GENERATION LOGIC ---
+
+function getTypeForField(field: any): string {
+  switch (field.type) {
+    case 'string':
+    case 'text':
+    case 'richtext':
+    case 'email':
+    case 'uid':
+    case 'password':
+      return 'string';
+    case 'integer':
+    case 'biginteger':
+    case 'decimal':
+    case 'float':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'date':
+    case 'datetime':
+    case 'time':
+      return 'string'; // Or Date, depending on preference
+    case 'json':
+      return 'Record<string, unknown>';
+    case 'enumeration':
+      return field.enum.map((v: string) => `'${v}'`).join(' | ');
+    case 'media':
+      return `StrapiResponse<StrapiMedia${field.multiple ? '[]' : ''}>`;
+    case 'relation':
+      const targetInterface = getInterfaceName(field.target);
+      return `StrapiResponse<${targetInterface}${field.relation.endsWith('Many') ? '[]' : ''}>`;
+    case 'component':
+      const componentInterface = getInterfaceName(field.component);
+      return `${componentInterface}${field.repeatable ? '[]' : ''}`;
+    case 'dynamiczone':
+      return `(${field.components.map(getInterfaceName).join(' | ')})[]`;
+    default:
+      return 'any';
   }
 }
 
-function generateTypeFromSchema(schema: any): string {
-  // Generate TypeScript interface from Strapi schema
-  // This is simplified - expand based on actual Strapi response
-  const lines = [`export interface ${schema.uid} {`];
-  
-  for (const [fieldName, fieldConfig] of Object.entries(schema.attributes)) {
-    const field = fieldConfig as any;
-    let type = 'unknown';
-    
-    if (field.type === 'string') type = 'string';
-    else if (field.type === 'integer' || field.type === 'biginteger' || field.type === 'decimal') type = 'number';
-    else if (field.type === 'boolean') type = 'boolean';
-    else if (field.type === 'date' || field.type === 'datetime' || field.type === 'time') type = 'string';
-    else if (field.type === 'media') type = 'StrapiMedia | null';
-    else if (field.type === 'relation') {
-      const related = field.relation?.split('.')?.[1] || 'unknown';
-      type = `StrapiResponse<${related}> | null`;
+async function generateContentTypes(schemas: any[]): Promise<string> {
+  let content = '// --- CONTENT TYPES ---\n\n';
+  for (const schema of schemas) {
+    if (!schema.uid.startsWith('api::')) continue;
+
+    const interfaceName = getInterfaceName(schema.uid);
+    content += `export interface ${interfaceName} {\n`;
+    content += `  id: number;\n`;
+    content += '  attributes: {\n';
+
+    for (const [key, attr] of Object.entries(schema.attributes)) {
+      const type = getTypeForField(attr);
+      const optional = (attr as any).required ? '' : '?';
+      content += `    ${key}${optional}: ${type};\n`;
     }
-    else if (field.type === 'component') type = 'any';
-    else if (field.type === 'dynamiczone') type = 'any[]';
-    else if (field.type === 'json') type = 'Record<string, unknown>';
     
-    const optional = field.required === false ? '?' : '';
-    lines.push(`  ${fieldName}${optional}: ${type};`);
+    content += '    createdAt: string;\n';
+    content += '    updatedAt: string;\n';
+    content += '    publishedAt?: string;\n';
+    content += '  };\n}
+\n';
   }
-  
-  lines.push(`}`);
-  return lines.join('\n');
+  return content;
 }
+
+async function generateComponentTypes(schemas: any[]): Promise<string> {
+  let content = '// --- COMPONENTS ---\n\n';
+  for (const schema of schemas) {
+    if (schema.uid.startsWith('api::')) continue;
+
+    const interfaceName = getInterfaceName(schema.uid);
+    content += `export interface ${interfaceName} {\n`;
+    content += `  id: number;\n`;
+
+    for (const [key, attr] of Object.entries(schema.attributes)) {
+      const type = getTypeForField(attr);
+      const optional = (attr as any).required ? '' : '?';
+      content += `  ${key}${optional}: ${type};\n`;
+    }
+    content += '}\n\n';
+  }
+  return content;
+}
+
+// --- MAIN EXECUTION ---
 
 async function main() {
-  console.log('📡 Fetching Strapi content types...');
-  const data = await fetchContentTypes();
-  
-  if (!data) {
-    console.log('❌ Could not fetch content types. Using generic types only.');
+  if (!API_TOKEN) {
+    console.error('❌ STRAPI_API_TOKEN environment variable is not set.');
     return;
   }
-  
-  const types: string[] = [];
-  types.push('// Auto-generated from Strapi API');
-  types.push('// Run with: npm run strapi:types');
-  types.push('');
-  
-  // Generate types for each content type
-  for (const contentType of data.data) {
-    const interfaceCode = generateTypeFromSchema(contentType);
-    types.push(interfaceCode);
-    types.push('');
+
+  console.log('📡 Fetching all content types from Strapi...');
+  const response = await fetch(`${STRAPI_URL}/api/content-type-builder/content-types`, {
+    headers: { Authorization: `Bearer ${API_TOKEN}` }
+  });
+
+  if (!response.ok) {
+    console.error(`❌ Failed to fetch schemas: ${response.status}`);
+    return;
   }
+
+  const { data: schemas } = await response.json();
+
+  if (!existsSync(OUTPUT_DIR)) {
+    mkdirSync(OUTPUT_DIR, { recursive: true });
+  }
+
+  // Base types
+  const baseTypes = `
+    // Base Strapi types. Need to be in a separate file to avoid circular dependencies.
+    export interface StrapiMedia {}
+    export interface StrapiResponse<T> {}
+  `;
+  writeFileSync(join(OUTPUT_DIR, 'base.ts'), baseTypes, 'utf8');
+
+  // Components
+  const componentTypes = await generateComponentTypes(schemas);
+  writeFileSync(join(OUTPUT_DIR, 'components.ts'), componentTypes, 'utf8');
   
-  const outputPath = path.join(process.cwd(), 'lib', 'strapi', 'generated-types.ts');
-  fs.writeFileSync(outputPath, types.join('\n'), 'utf8');
-  
-  console.log(`✅ Generated types in ${outputPath}`);
+  // Content Types
+  const contentTypes = await generateContentTypes(schemas);
+  writeFileSync(join(OUTPUT_DIR, 'content-types.ts'), contentTypes, 'utf8');
+
+  // Index file
+  const indexFile = `
+    export * from './base';
+    export * from './components';
+    export * from './content-types';
+  `;
+  writeFileSync(join(OUTPUT_DIR, 'index.ts'), indexFile, 'utf8');
+
+  console.log(`✅ Types generated successfully in ${OUTPUT_DIR}`);
   console.log('💡 Add to package.json: "strapi:types": "tsx lib/strapi/generate-types.ts"');
 }
 
@@ -474,43 +573,43 @@ async function strapiFetch<T>(
 
 ## Usage Examples
 
-### Get articles with author and cover
+### Combining helpers to get articles
 
 ```typescript
-// v4/v5
-const { data: articles } = await strapiGet<Article[]>(
-  '/articles',
-  {
-    params: {
-      'populate[author]': '*',
-      'populate[cover]': '*',
-      'pagination[page]': 1,
-      'pagination[pageSize]': 10,
-      'sort': 'createdAt:desc',
-    }
-  }
-);
+import { strapiGet } from './api';
+import { populate, filters, sort, pagination } from './helpers';
+import type { Article } from './generated-types'; 
 
-// v3
-const { data: articles } = await strapiGetV3<Article[]>(
-  '/articles',
-  {
-    params: {
-      _populate: 'author,cover',
-      _limit: 10,
-      _sort: 'createdAt:desc',
-    }
-  }
-);
+async function getPublishedArticles() {
+  const query = [
+    populate({ 
+      author: { populate: '*' }, 
+      cover: 'url' 
+    }),
+    filters({ 
+      publishedAt: { $notNull: true },
+      category: { name: 'News' },
+    }),
+    sort(['publishedAt', 'title'], ['desc', 'asc']),
+    pagination({ page: 1, pageSize: 10 })
+  ].filter(Boolean).join('&');
+
+  const { data: articles } = await strapiGet<Article[]>(
+    `/articles?${query}`
+  );
+
+  return articles;
+}
 ```
 
 ### Display image
 
 ```typescript
+import { getBestImage, getImageUrl } from './helpers';
 // In component
-const imageUrl = getBestImage(article.cover, 'medium');
+const imageUrl = getBestImage(article.attributes.cover.data, 'medium');
 // or for specific format
-const thumbnailUrl = getImageUrl(article.cover?.formats?.thumbnail);
+const thumbnailUrl = getImageUrl(article.attributes.cover.data.attributes.formats?.thumbnail);
 ```
 
 ## Done Checklist
