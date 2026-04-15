@@ -58,15 +58,18 @@ function loadDotEnvFile(relPath) {
       val = val.slice(1, -1);
     }
 
+    // Never override real environment variables (CI / shell).
+    // This preserves expected precedence: env vars > .env.local > .env
     if (key && process.env[key] === undefined) {
       process.env[key] = val;
     }
   }
 }
 
-// CRITICAL: Husky doesn't auto-load .env.local
-loadDotEnvFile(".env.local");
+// CRITICAL: Husky doesn't auto-load .env files
+// Load .env first, then .env.local (both only fill missing values)
 loadDotEnvFile(".env");
+loadDotEnvFile(".env.local");
 ```
 
 ### Script structure
