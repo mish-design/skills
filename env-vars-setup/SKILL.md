@@ -30,15 +30,23 @@ This skill uses a modular structure:
 **Load the shared helper functions:**
 
 ```bash
+echo "🔧 Loading helper functions..."
+
 # Source helper functions if they exist
 if [ -f "helper-functions.sh" ]; then
   source helper-functions.sh
+  echo "✅ Helper functions loaded from helper-functions.sh"
 else
-  echo "Loading helper functions inline..."
+  echo "⚠️  Helper functions file not found"
+  echo "Loading minimal helper functions inline..."
+  
   # Define minimal helper functions inline as fallback
+  command_exists() {
+    if command -v "$1" > /dev/null 2>&1; then return 0; else return 1; fi
+  }
   
   detect_project_type() {
-    echo '{"type":"generic","hasTS":false}'
+    echo '{"type":"generic","hasTS":false,"success":false}'
   }
   
   detect_package_manager() {
@@ -65,12 +73,15 @@ EXISTING_ENV_FILES=$(ls .env* 2>/dev/null | grep -v ".env.example" | tr '\n' ','
 # Check for existing validation
 EXISTING_VALIDATION_FILES=$(ls src/env.* env.* 2>/dev/null | tr '\n' ',' | sed 's/,$//' || echo "")
 
-# Report findings
+# Report findings and make decisions
 if [ -n "$EXISTING_ENV_FILES" ]; then
   echo "📁 Found existing .env files: ${EXISTING_ENV_FILES//,/, }"
-  echo "❓ Create .env.example based on existing? (y/n) [y]"
-  # Skill would wait for user input
-  CREATE_FROM_EXISTING="y"
+  echo "⚠️  Note: In a real skill execution, you would be asked:"
+  echo "      'Create .env.example based on existing files? (y/n) [y]'"
+  echo ""
+  # For skill documentation, we show the recommended approach
+  echo "✅ Recommended: Create fresh .env.example template for consistency"
+  CREATE_FROM_EXISTING="n"  # Default to fresh template
 else
   echo "✅ No existing .env files found"
   CREATE_FROM_EXISTING="n"
@@ -78,8 +89,10 @@ fi
 
 if [ -n "$EXISTING_VALIDATION_FILES" ]; then
   echo "📁 Found existing validation: ${EXISTING_VALIDATION_FILES//,/, }"
-  echo "❓ Overwrite existing validation? (y/n) [n]"
-  # Skill would wait for user input
+  echo "⚠️  Note: In a real skill execution, you would be asked:"
+  echo "      'Overwrite existing validation files? (y/n) [n]'"
+  echo ""
+  echo "✅ Recommended: Skip overwriting to preserve custom validations"
   OVERWRITE_VALIDATION="n"
 fi
 ```
@@ -275,14 +288,26 @@ fi
 
 ## Step 8 — Update package.json Scripts
 
-**Add useful environment scripts:**
+**Add useful environment scripts safely:**
 
 ```bash
 if [ -f "package.json" ]; then
-  echo "📜 Adding scripts to package.json..."
+  echo "📜 Updating package.json scripts..."
   
-  # Use Node.js to safely update package.json
-  if command -v node &> /dev/null; then
+  # Check if we have the safe_update_package_json function
+  if command_exists safe_update_package_json; then
+    if safe_update_package_json; then
+      echo "✅ Package.json updated successfully"
+    else
+      echo "⚠️  Could not update package.json automatically"
+      echo ""
+      echo "📝 You can add these scripts manually:"
+      echo '  "env:validate": "node -e \"try { require(\\'./src/env\\'); console.log(\\'✅ Validated\\') } catch(e) { console.log(\\'❌ Failed: ' + e.message + '\\') }"'
+      echo '  "env:init": "cp .env.example .env.local 2>/dev/null || echo \\'Create .env.local manually\\'"'
+      echo '  "env:check": "node -e \"const fs = require(\\'fs\\'); if (!fs.existsSync(\\'.env.local\\')) { console.log(\\'❌ .env.local missing\\'); process.exit(1) }"'
+    fi
+  elif command_exists node; then
+    # Fallback method
     node -e "
     const fs = require('fs');
     try {
@@ -299,7 +324,12 @@ if [ -f "package.json" ]; then
       console.log('Could not update package.json:', e.message);
     }
     "
+  else
+    echo "⚠️  Node.js not available - cannot update package.json"
+    echo "📝 Add scripts manually to package.json"
   fi
+else
+  echo "⏭️  No package.json found - skipping script updates"
 fi
 ```
 

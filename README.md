@@ -28,6 +28,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill stylelint-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill env-vars-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -55,6 +57,7 @@
 | **i18n-setup** | Настройка интернационализации для React/Vue с TypeScript-типами и lazy loading |
 | **next-postcss-setup** | Настройка PostCSS конфигурации для Next.js проектов с плагинами |
 | **stylelint-setup** | Настройка Stylelint для CSS/SCSS с конфигурацией порядка свойств |
+| **env-vars-setup** | Настройка переменных окружения с валидацией, TypeScript типами и безопасностью |
 
 ## Примеры доступных путей
 
