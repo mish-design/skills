@@ -22,6 +22,12 @@
 
 `npx skills add https://github.com/mish-design/skills --skill zustand-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill i18n-setup`
+
+`npx skills add https://github.com/mish-design/skills --skill next-postcss-setup`
+
+`npx skills add https://github.com/mish-design/skills --skill stylelint-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -46,6 +52,9 @@
 | **axios-setup** | Типизированный API-клиент с interceptors, retry и централизованной обработкой ошибок |
 | **strapi-client-setup** | Типизированный клиент для Strapi с поддержкой v3/v4/v5, populate и медиафайлами |
 | **zustand-setup** | Легкий state management для React с хуками и middleware |
+| **i18n-setup** | Настройка интернационализации для React/Vue с TypeScript-типами и lazy loading |
+| **next-postcss-setup** | Настройка PostCSS конфигурации для Next.js проектов с плагинами |
+| **stylelint-setup** | Настройка Stylelint для CSS/SCSS с конфигурацией порядка свойств |
 
 ## Примеры доступных путей
 
