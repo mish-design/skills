@@ -55,9 +55,9 @@ echo "📊 Project: $PROJECT_TYPE, TypeScript: $HAS_TYPESCRIPT"
 
 ---
 
-## Step 3 — Create .env.example
+## Step 3 — Create `.env.example` and protect secrets
 
-**Create basic template:**
+**Create basic template (safe to commit):**
 
 ```bash
 echo "📝 Creating .env.example..."
@@ -79,9 +79,13 @@ DATABASE_URL="postgresql://user:password@localhost:5432/dbname"
 STRIPE_SECRET_KEY="sk_test_51xxx"
 OPENAI_API_KEY="sk-xxx"
 
-# Frontend (Next.js)
+# Frontend (Next.js) - exposed to browser (NO secrets!)
 NEXT_PUBLIC_APP_NAME="My App"
 NEXT_PUBLIC_API_URL="http://localhost:3000/api"
+
+# Frontend (Vite) - exposed to browser (NO secrets!)
+VITE_APP_NAME="My App"
+VITE_API_URL="http://localhost:3000/api"
 
 # Add your variables below
 EOF
@@ -89,23 +93,56 @@ EOF
 echo "✅ Created .env.example"
 ```
 
+**Add `.env*` to `.gitignore` (keep `.env.example` tracked):**
+
+```bash
+echo "🔒 Ensuring .env files are ignored by git..."
+
+if [ -f ".gitignore" ]; then
+  # NOTE: use POSIX character class (grep doesn't support \s by default)
+  if ! grep -q "^[[:space:]]*\\.env\\*" .gitignore; then
+    cat >> .gitignore << 'EOF'
+
+# Environment variables
+.env*
+!.env.example
+EOF
+    echo "✅ Updated .gitignore"
+  else
+    echo "✅ .gitignore already has .env* rule"
+  fi
+else
+  cat > .gitignore << 'EOF'
+# Environment variables
+.env*
+!.env.example
+EOF
+  echo "✅ Created .gitignore"
+fi
+```
+
 ---
 
 ## Step 4 — Install Dependencies
 
-**Install zod for validation:**
+**Install zod for validation (only after user confirms):**
 
 ```bash
 if [ -f "package.json" ] && ! grep -q '"zod"' package.json; then
-  echo "📦 Installing zod..."
-  
+  echo "📦 zod not found in package.json."
+  echo "Ask the user: install zod now? (recommended)"
+
+  # Proceed ONLY if the user confirms.
+  # Then install with detected package manager:
   if [ -f "yarn.lock" ]; then
-    yarn add zod --silent
+    yarn add zod
   elif [ -f "pnpm-lock.yaml" ]; then
-    pnpm add zod --silent
+    pnpm add zod
   else
-    npm install zod --silent
+    npm install zod
   fi
+else
+  echo "✅ zod already present (or no package.json)."
 fi
 ```
 
@@ -113,101 +150,93 @@ fi
 
 ## Step 5 — Create Validation
 
-**Create validation file:**
+**Create a small runtime validator (JS) + optional TS types:**
 
 ```bash
 mkdir -p src
 
-if [ "$HAS_TYPESCRIPT" = "true" ]; then
-  # TypeScript version
-  cat > src/env.ts << 'EOF'
-import { z } from 'zod';
-
-const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production']).default('development'),
-  PORT: z.string().default('3000'),
-  DATABASE_URL: z.string().url(),
-  NEXT_PUBLIC_APP_NAME: z.string().default('My App'),
-});
-
-const env = envSchema.parse(process.env);
-export { env };
-EOF
-  echo "✅ Created TypeScript validation"
-else
-  # JavaScript version
-  cat > src/env.js << 'EOF'
+# Always create JS runtime validator (works without TS runners)
+cat > src/env.js << 'EOF'
 const { z } = require('zod');
 
 const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production']).default('development'),
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.string().default('3000'),
   DATABASE_URL: z.string().url(),
-  NEXT_PUBLIC_APP_NAME: z.string().default('My App'),
+  NEXT_PUBLIC_APP_NAME: z.string().optional(),
+  NEXT_PUBLIC_API_URL: z.string().optional(),
+  VITE_APP_NAME: z.string().optional(),
+  VITE_API_URL: z.string().optional(),
 });
 
 module.exports = { env: envSchema.parse(process.env) };
 EOF
-  echo "✅ Created JavaScript validation"
-fi
-```
+echo "✅ Created runtime validation: src/env.js"
 
----
-
-## Step 6 — TypeScript Types
-
-**Add types if TypeScript project:**
-
-```bash
+# If this is a TypeScript project, add basic ProcessEnv typing
 if [ "$HAS_TYPESCRIPT" = "true" ]; then
   cat > env.d.ts << 'EOF'
 declare global {
   namespace NodeJS {
     interface ProcessEnv {
-      NODE_ENV: 'development' | 'production';
-      PORT: string;
-      DATABASE_URL: string;
-      NEXT_PUBLIC_APP_NAME: string;
+      NODE_ENV?: 'development' | 'test' | 'production';
+      PORT?: string;
+      DATABASE_URL?: string;
+      NEXT_PUBLIC_APP_NAME?: string;
+      NEXT_PUBLIC_API_URL?: string;
+      VITE_APP_NAME?: string;
+      VITE_API_URL?: string;
     }
   }
 }
 export {};
 EOF
-  echo "✅ Added TypeScript types"
+  echo "✅ Added TypeScript env typing: env.d.ts"
 fi
 ```
 
 ---
 
-## Step 7 — Update package.json
+## Step 6 — Update package.json (optional)
 
-**Add useful scripts:**
+**Add a couple of convenience scripts (only if Node is available):**
 
 ```bash
 if [ -f "package.json" ]; then
   echo "📜 Adding scripts..."
-  
-  node -e "
-  const fs = require('fs');
-  try {
-    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-    if (!pkg.scripts) pkg.scripts = {};
-    
-    pkg.scripts['env:validate'] = 'node -e \"try { require(\\'./src/env\\'); console.log(\\'✅ Validated\\') } catch(e) { console.log(\\'❌ Failed\\') }\"';
-    pkg.scripts['env:init'] = 'cp .env.example .env.local';
-    
-    fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-    console.log('✅ Added scripts');
-  } catch (e) {
-    console.log('⚠️  Could not update package.json');
-  }
-  "
+
+  # Note: keep scripts cross-platform by using node for copying.
+  if command -v node >/dev/null 2>&1; then
+    node -e "
+    const fs = require('fs');
+    try {
+      const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+      pkg.scripts ||= {};
+
+      // Create .env.local from template (cross-platform)
+      pkg.scripts['env:init'] = pkg.scripts['env:init'] || \"node -e \\\"const fs=require('fs'); if(!fs.existsSync('.env.example')) { console.error('❌ .env.example missing'); process.exit(1) } if(!fs.existsSync('.env.local')) fs.copyFileSync('.env.example','.env.local'); console.log('✅ .env.local ready');\\\"\"; 
+
+      // Check that .env.local exists
+      pkg.scripts['env:check'] = pkg.scripts['env:check'] || \"node -e \\\"const fs=require('fs'); if(!fs.existsSync('.env.local')) { console.error('❌ .env.local missing'); process.exit(1) } console.log('✅ .env.local exists');\\\"\"; 
+
+      // Validate current environment (loads src/env.js)
+      pkg.scripts['env:validate'] = pkg.scripts['env:validate'] || \"node -e \\\"require('./src/env.js'); console.log('✅ env validated');\\\"\"; 
+
+      fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+      console.log('✅ Added scripts');
+    } catch (e) {
+      console.log('⚠️  Could not update package.json');
+    }
+    "
+  else
+    echo "⚠️  Node.js not found; skipping package.json scripts."
+  fi
 fi
 ```
 
 ---
 
-## Step 8 — Final Instructions
+## Step 7 — Final Instructions
 
 **Provide user guidance:**
 
@@ -216,19 +245,21 @@ echo "✅ Setup complete!"
 echo ""
 echo "📋 WHAT WAS CREATED:"
 echo "  • .env.example        - Template (safe to commit)"
-echo "  • src/env.*           - Validation file"
-if [ "$HAS_TYPESCRIPT" = "true" ]; then echo "  • env.d.ts            - TypeScript types"; fi
-echo "  • package.json       - Added environment scripts"
+echo "  • src/env.js          - Runtime env validator"
+if [ "$HAS_TYPESCRIPT" = "true" ]; then echo "  • env.d.ts            - TypeScript env typing"; fi
+echo "  • .gitignore          - Updated to ignore secrets"
+echo "  • package.json        - Optional scripts (env:init, env:check)"
 echo ""
 echo "🚀 NEXT STEPS:"
 echo "  1. cp .env.example .env.local"
 echo "  2. Edit .env.local with actual values"
 echo "  3. NEVER commit .env.local to git!"
-echo "  4. npm run env:validate (to test)"
+echo "  4. Start your app; it will fail fast if required vars are missing"
 echo ""
 echo "🔧 AVAILABLE COMMANDS:"
-echo "  npm run env:validate - Validate variables"
 echo "  npm run env:init     - Create .env.local"
+echo "  npm run env:check    - Check .env.local exists"
+echo "  npm run env:validate - Validate env via src/env.js"
 echo ""
 echo "⚠️  SECURITY: Use different values for development/production!"
 ```
@@ -256,7 +287,7 @@ echo "⚠️  SECURITY: Use different values for development/production!"
 **Test validation:**
 
 ```bash
-node -e "try { require('./src/env'); console.log('✅ Works') } catch(e) { console.log('⚠️  Expected (no .env.local)') }"
+node -e "try { require('./src/env.js'); console.log('✅ Validator loads') } catch(e) { console.log('❌ Validator error:', e.message) }"
 ```
 
 ---
