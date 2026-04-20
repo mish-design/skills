@@ -34,6 +34,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill github-actions-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill react-query-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -64,6 +66,7 @@
 | **env-vars-setup** | Настройка переменных окружения с валидацией, TypeScript типами и безопасностью |
 | **eslint-setup** | Настройка ESLint с современным flat config для JS/TS/React/Next.js с минимальными production-safe правилами |
 | **github-actions-setup** | CI workflow для Node.js/TypeScript с cache, concurrency и cancel-in-progress |
+| **react-query-setup** | TanStack Query v5 с QueryClient, typed hooks и поддержкой Next.js App Router |
 
 ## Примеры доступных путей
 
