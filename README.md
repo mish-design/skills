@@ -32,6 +32,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill eslint-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill github-actions-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -61,6 +63,7 @@
 | **stylelint-setup** | Настройка Stylelint для CSS/SCSS с конфигурацией порядка свойств |
 | **env-vars-setup** | Настройка переменных окружения с валидацией, TypeScript типами и безопасностью |
 | **eslint-setup** | Настройка ESLint с современным flat config для JS/TS/React/Next.js с минимальными production-safe правилами |
+| **github-actions-setup** | CI workflow для Node.js/TypeScript с cache, concurrency и cancel-in-progress |
 
 ## Примеры доступных путей
 
