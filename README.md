@@ -38,6 +38,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill react-hook-form-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill code-review`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -70,6 +72,7 @@
 | **github-actions-setup** | CI workflow для Node.js/TypeScript с cache, concurrency и cancel-in-progress |
 | **react-query-setup** | TanStack Query v5 с QueryClient, typed hooks и поддержкой Next.js App Router |
 | **react-hook-form-setup** | React Hook Form v7 с Zod валидацией, typed forms и i18n интеграцией |
+| **code-review** | Структурированное code review по чеклисту из 7 измерений: correctness, security, performance, maintainability, type safety, tests, architecture |
 
 ## Примеры доступных путей
 
