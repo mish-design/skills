@@ -40,6 +40,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill code-review`
 
+`npx skills add https://github.com/mish-design/skills --skill msw-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -73,6 +75,7 @@
 | **react-query-setup** | TanStack Query v5 с QueryClient, typed hooks и поддержкой Next.js App Router |
 | **react-hook-form-setup** | React Hook Form v7 с Zod валидацией, typed forms и i18n интеграцией |
 | **code-review** | Структурированное code review по чеклисту из 7 измерений: correctness, security, performance, maintainability, type safety, tests, architecture |
+| **msw-setup** | MSW (Mock Service Worker) для мока API в браузере и тестах. Позволяет разрабатывать без готового бэкенда |
 
 ## Примеры доступных путей
 
