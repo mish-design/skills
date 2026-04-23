@@ -44,6 +44,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill storybook-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill sentry-setup`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -79,6 +81,7 @@
 | **code-review** | Структурированное code review по чеклисту из 7 измерений: correctness, security, performance, maintainability, type safety, tests, architecture |
 | **msw-setup** | MSW (Mock Service Worker) для мока API в браузере и тестах. Позволяет разрабатывать без готового бэкенда |
 | **storybook-setup** | Storybook v7+ с Vite, CSF3 stories, MSW, interaction testing и decorators для i18n/store |
+| **sentry-setup** | Sentry v8 для error tracking и performance monitoring. Ловит ошибки, отправляет source maps, показывает breadcrumbs |
 
 ## Примеры доступных путей
 
