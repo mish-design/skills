@@ -48,6 +48,8 @@
 
 `npx skills add https://github.com/mish-design/skills --skill playwright-setup`
 
+`npx skills add https://github.com/mish-design/skills --skill dependency-audit`
+
 ## Установка через git clone (_на примере claude_)
 
 1. откройте ваш проект
@@ -85,6 +87,7 @@
 | **storybook-setup** | Storybook v7+ с Vite, CSF3 stories, MSW, interaction testing и decorators для i18n/store |
 | **sentry-setup** | Sentry v8 для error tracking и performance monitoring. Ловит ошибки, отправляет source maps, показывает breadcrumbs |
 | **playwright-setup** | Playwright для E2E тестирования с Page Object Model, MSW моками и CI интеграцией |
+| **dependency-audit** | Аудит зависимостей: npm audit (security), ncu (outdated), depcheck (unused) |
 
 ## Примеры доступных путей
 
